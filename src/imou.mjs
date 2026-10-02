@@ -272,7 +272,7 @@ export async function registerAlarmCallback({
       status: "on",
       callbackUrl,
       callbackFlag: "alarm",
-      basePush: "2"
+      basePush: "1"
     },
     config
   );
@@ -281,7 +281,7 @@ export async function registerAlarmCallback({
     dataCenter,
     status: "on",
     callbackFlag: "alarm",
-    basePush: "2",
+    basePush: "1",
     callbackTarget
   };
 }
