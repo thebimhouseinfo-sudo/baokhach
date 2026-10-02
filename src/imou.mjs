@@ -193,7 +193,7 @@ export async function probeSharedDevices({
     config
   );
 
-  let rawDeviceList = data?.deviceList;
+  let rawDeviceList = data?.deviceList ?? data?.devices;
   if (typeof rawDeviceList === "string") {
     try {
       rawDeviceList = JSON.parse(rawDeviceList);
@@ -214,14 +214,15 @@ export async function probeSharedDevices({
     devices: devices.map(sanitizeSharedDevice),
     diagnostics: {
       dataKeys: Object.keys(data || {}).sort(),
-      deviceListType: Array.isArray(data?.deviceList)
+      deviceListSource: data?.deviceList !== undefined ? "deviceList" : data?.devices !== undefined ? "devices" : "missing",
+      deviceListType: Array.isArray(rawDeviceList)
         ? "array"
-        : data?.deviceList === null
+        : rawDeviceList === null
           ? "null"
-          : typeof data?.deviceList,
+          : typeof rawDeviceList,
       deviceListKeys:
-        data?.deviceList && typeof data.deviceList === "object" && !Array.isArray(data.deviceList)
-          ? Object.keys(data.deviceList).sort()
+        rawDeviceList && typeof rawDeviceList === "object" && !Array.isArray(rawDeviceList)
+          ? Object.keys(rawDeviceList).sort()
           : []
     }
   };
