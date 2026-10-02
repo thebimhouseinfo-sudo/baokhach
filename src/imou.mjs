@@ -271,7 +271,7 @@ export async function registerAlarmCallback({
       token,
       status: "on",
       callbackUrl,
-      callbackFlag: "alarm",
+      callbackFlag: "alarm,iot",
       basePush: "1"
     },
     config
@@ -280,7 +280,7 @@ export async function registerAlarmCallback({
   return {
     dataCenter,
     status: "on",
-    callbackFlag: "alarm",
+    callbackFlag: "alarm,iot",
     basePush: "1",
     callbackTarget
   };
