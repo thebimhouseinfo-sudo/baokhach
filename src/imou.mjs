@@ -193,7 +193,15 @@ export async function probeSharedDevices({
     config
   );
 
-  const rawDeviceList = data?.deviceList;
+  let rawDeviceList = data?.deviceList;
+  if (typeof rawDeviceList === "string") {
+    try {
+      rawDeviceList = JSON.parse(rawDeviceList);
+    } catch {
+      rawDeviceList = null;
+    }
+  }
+
   const devices = Array.isArray(rawDeviceList)
     ? rawDeviceList
     : rawDeviceList && typeof rawDeviceList === "object"
@@ -203,6 +211,18 @@ export async function probeSharedDevices({
   return {
     dataCenter,
     count: Number(data?.count ?? devices.length),
-    devices: devices.map(sanitizeSharedDevice)
+    devices: devices.map(sanitizeSharedDevice),
+    diagnostics: {
+      dataKeys: Object.keys(data || {}).sort(),
+      deviceListType: Array.isArray(data?.deviceList)
+        ? "array"
+        : data?.deviceList === null
+          ? "null"
+          : typeof data?.deviceList,
+      deviceListKeys:
+        data?.deviceList && typeof data.deviceList === "object" && !Array.isArray(data.deviceList)
+          ? Object.keys(data.deviceList).sort()
+          : []
+    }
   };
 }
