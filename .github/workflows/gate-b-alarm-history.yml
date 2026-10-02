@@ -1,0 +1,23 @@
+name: gate-b-alarm-history
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".gate-b-alarm-trigger"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      IMOU_APP_ID: ${{ secrets.IMOU_APP_ID }}
+      IMOU_APP_SECRET: ${{ secrets.IMOU_APP_SECRET }}
+      IMOU_DATA_CENTER: sg
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Query recent Imou alarm history
+        run: npm run alarms:probe
