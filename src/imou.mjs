@@ -425,3 +425,96 @@ export async function probeRecentAlarmMessages({
     alarms: alarms.map(sanitizeAlarmMessage)
   };
 }
+
+
+function alarmTimeMs(alarm) {
+  const numeric = Number(alarm?.time);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric > 1e12 ? numeric : numeric * 1000;
+  }
+
+  const local = String(alarm?.localDate || "").trim();
+  if (!local) return 0;
+
+  const normalized = local.includes("T") ? local : local.replace(" ", "T");
+  const parsed = Date.parse(normalized + (/[zZ]|[+-]\d\d:\d\d$/.test(normalized) ? "" : "+07:00"));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function sanitizeHumanAlarm(alarm) {
+  if (String(alarm?.type ?? "") !== "33000") return null;
+
+  const occurredAtMs = alarmTimeMs(alarm);
+  const identity = [
+    alarm?.alarmId ?? "",
+    alarm?.time ?? "",
+    alarm?.localDate ?? "",
+    alarm?.channelId ?? ""
+  ].join("|");
+
+  return {
+    eventRef: crypto
+      .createHash("sha256")
+      .update(identity, "utf8")
+      .digest("hex")
+      .slice(0, 20),
+    occurredAtMs: occurredAtMs || null
+  };
+}
+
+export async function queryHumanDetections({
+  appId,
+  appSecret,
+  deviceId,
+  channelId = "0",
+  dataCenter = "sg",
+  fetchImpl = globalThis.fetch,
+  timeZone = "Asia/Ho_Chi_Minh",
+  lookbackSeconds = 120,
+  now = new Date()
+}) {
+  if (!deviceId && deviceId !== 0) {
+    throw new ImouApiError("Imou device is not configured.", {
+      code: "MISSING_DEVICE_ID",
+      status: 503
+    });
+  }
+
+  const config = { appId, appSecret, dataCenter, fetchImpl };
+  const token = await getAccessToken(config);
+  const end = new Date(now);
+  const begin = new Date(
+    end.getTime() - Math.max(30, Number(lookbackSeconds) || 120) * 1000
+  );
+
+  const data = await callImou(
+    "getAlarmMessage",
+    {
+      token,
+      deviceId: String(deviceId),
+      channelId: String(channelId),
+      beginTime: formatDateInTimeZone(begin, timeZone),
+      endTime: formatDateInTimeZone(end, timeZone),
+      count: 20,
+      nextAlarmId: "-1"
+    },
+    config
+  );
+
+  const alarms = Array.isArray(data?.alarms) ? data.alarms : [];
+  const events = alarms
+    .map(sanitizeHumanAlarm)
+    .filter(Boolean)
+    .sort((a, b) => {
+      const at = Number(a.occurredAtMs || 0);
+      const bt = Number(b.occurredAtMs || 0);
+      if (at !== bt) return at - bt;
+      return String(a.eventRef).localeCompare(String(b.eventRef));
+    });
+
+  return {
+    events,
+    checkedAt: end.toISOString(),
+    lookbackSeconds: Math.max(30, Number(lookbackSeconds) || 120)
+  };
+}
