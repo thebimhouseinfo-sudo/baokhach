@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Báo khách — Gate A</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; line-height: 1.5; }
+    body { margin: 0; padding: 24px; max-width: 760px; margin-inline: auto; }
+    .card { border: 1px solid #8885; border-radius: 16px; padding: 20px; }
+    .row { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; }
+    code { overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <h1>Báo khách</h1>
+  <p>Gate A — kiểm tra kết nối Imou Open Platform. Trang này không hiển thị credential hoặc serial camera.</p>
+  <section class="card">
+    <div class="row"><span>Backend</span><span id="backend">Đang kiểm tra…</span></div>
+    <div class="row"><span>AppId</span><span id="appId">—</span></div>
+    <div class="row"><span>AppSecret</span><span id="appSecret">—</span></div>
+    <div class="row"><span>Probe key</span><span id="probeKey">—</span></div>
+    <div class="row"><span>Data center</span><span id="dataCenter">—</span></div>
+  </section>
+  <p>Probe thật được bảo vệ bằng server-side <code>IMOU_PROBE_KEY</code> và chỉ trả dữ liệu camera đã được làm sạch.</p>
+  <script>
+    fetch("/api/health", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        const yesNo = (value) => value ? "Đã cấu hình" : "Chưa cấu hình";
+        document.querySelector("#backend").textContent = data.ok ? "Sẵn sàng" : "Lỗi";
+        document.querySelector("#appId").textContent = yesNo(data.configured?.appId);
+        document.querySelector("#appSecret").textContent = yesNo(data.configured?.appSecret);
+        document.querySelector("#probeKey").textContent = yesNo(data.configured?.probeKey);
+        document.querySelector("#dataCenter").textContent = data.dataCenter || "—";
+      })
+      .catch(() => {
+        document.querySelector("#backend").textContent = "Không kết nối được";
+      });
+  </script>
+</body>
+</html>
