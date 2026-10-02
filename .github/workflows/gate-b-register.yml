@@ -1,0 +1,32 @@
+name: gate-b-register
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".gate-b-trigger"
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    env:
+      IMOU_APP_ID: ${{ secrets.IMOU_APP_ID }}
+      IMOU_APP_SECRET: ${{ secrets.IMOU_APP_SECRET }}
+      IMOU_CALLBACK_URL: ${{ secrets.IMOU_CALLBACK_URL }}
+      IMOU_DATA_CENTER: sg
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Register Imou alarm callback
+        shell: bash
+        run: |
+          if [ -z "$IMOU_APP_ID" ] || [ -z "$IMOU_APP_SECRET" ] || [ -z "$IMOU_CALLBACK_URL" ]; then
+            echo "::error::Gate B secrets are not configured."
+            exit 1
+          fi
+          npm run callback:register
