@@ -99,8 +99,7 @@ async function callImou(method, params, config) {
   const result = payload?.result;
   if (!response.ok || !result || String(result.code) !== "0") {
     const code = result?.code ? String(result.code) : "HTTP_" + response.status;
-    const message = result?.msg || "Imou request failed.";
-    throw new ImouApiError(String(message), { code, status: 502 });
+    throw new ImouApiError("Imou request failed.", { code, status: 502 });
   }
 
   return result.data ?? {};
