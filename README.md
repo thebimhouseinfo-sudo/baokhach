@@ -1,68 +1,86 @@
 # baokhach
 
-Web/PWA báo khách dùng **Human Detection event do camera Imou tự xác định**. Không đọc RTSP, không xử lý ảnh và không chạy AI nhận diện người.
+Web/PWA báo khách dùng **Human Detection do camera Imou tự xác định**. Ứng dụng không đọc RTSP, không xử lý ảnh và không chạy AI nhận diện người.
 
-## Gate A — PASS
+## Production flow
 
-Gate A đã xác định camera share qua Imou Open Platform và lấy được model/capability thật bằng API. Probe vẫn được giữ để chẩn đoán.
+Camera thật đã được xác minh là IPC-F32P (Bullet 2C 3MP). Với thiết bị được share/host, callback realtime không phát Human Detection ổn định; đường production dùng pull API đã được chứng minh bằng camera thật:
 
-### Biến môi trường Gate A
+```text
+PWA đang mở
+  -> GET /api/human-events mỗi 15 giây
+  -> server gọi Imou getAlarmMessage trực tiếp
+  -> chỉ giữ type=33000 (Human Detection)
+  -> browser dedupe event
+  -> cooldown 300 giây
+  -> phát "Có khách"
+```
+
+## Vercel environment
+
+Thiết lập trực tiếp trong Vercel, không commit giá trị thật:
 
 - `IMOU_APP_ID`
 - `IMOU_APP_SECRET`
-- `IMOU_PROBE_KEY`
-- `IMOU_DATA_CENTER` — mặc định `sg`
+- `IMOU_DEVICE_ID` — S/N/deviceId của IPC-F32P
+- `IMOU_CHANNEL_ID=0`
+- `IMOU_DATA_CENTER=sg`
+- `BAOKHACH_APP_KEY` — mã truy cập riêng do chủ app tự đặt
 
-### Probe
+Các biến callback cũ chỉ phục vụ chẩn đoán và không nằm trên production event path.
 
-```bash
-curl -X POST https://<deployment>/api/probe \
-  -H "Authorization: Bearer <IMOU_PROBE_KEY>"
+## Access control
+
+`/api/human-events` yêu cầu:
+
+```http
+Authorization: Bearer <BAOKHACH_APP_KEY>
 ```
 
-Output chỉ chứa dữ liệu đã làm sạch. Access token, AppSecret, owner account, play token, thumbnail URL và serial đầy đủ không được trả về.
+Key không nằm trong URL hoặc source. Mỗi browser nhập key một lần và lưu local trên thiết bị.
 
-## Gate B — Human Detection callback
+## Cooldown và dedupe
 
-Gate B chỉ thu callback alarm thật của Imou để xác định contract thực tế của camera. Chưa có cooldown, PWA notification hay phát audio ở phase này.
+- Lần mở đầu tiên: event Human Detection hiện tại chỉ được dùng làm baseline, không phát âm thanh cũ.
+- Event mới: nếu lần phát "Có khách" gần nhất đã cách ít nhất 300 giây thì phát một lần.
+- Event mới trong 299 giây đầu: ghi nhận đã thấy nhưng **không** kéo dài cooldown.
+- `lastSeenEventRef`, thời điểm event và `lastAlertAtMs` được lưu local để reload không phát lại event cũ.
 
-### Runtime secret
+## Foreground only
 
-Deployment public HTTPS cần thêm:
+Polling chạy khi trang/PWA đang ở trạng thái `visible`. Khi app vào nền hoặc điện thoại khóa, timer browser không được coi là đáng tin cậy. Khi quay lại foreground, app kiểm tra ngay.
 
-- `IMOU_CALLBACK_KEY` — chuỗi ngẫu nhiên dài, chỉ dùng để bảo vệ callback URL.
-- `IMOU_APP_ID` — dùng để reject callback có `appId` khác ứng dụng hiện tại.
+Reliable background/locked-screen alerting không thuộc phiên bản này.
 
-Endpoint:
+## API quota
+
+Production polling gọi **một `getAlarmMessage` cho mỗi chu kỳ**, không gọi `shareDeviceList` mỗi lần.
+
+15 giây/lần tương đương tối đa:
 
 ```text
-POST /api/imou-callback?k=<IMOU_CALLBACK_KEY>
+4 call/phút
+240 call/giờ
+5,760 call/ngày / một client mở liên tục
 ```
 
-Endpoint luôn sanitize payload trước khi log. Nó chỉ giữ các field cần cho Gate B như `msgType`, event id/fingerprint, channel, thời gian, masked device ref, tên header bảo mật và user-agent. Token cloud recording, ảnh, remark, giá trị `desc` và serial đầy đủ không được log.
-
-### Đăng ký callback với Imou
-
-GitHub Actions cần thêm secret:
-
-- `IMOU_CALLBACK_URL` — URL đầy đủ của endpoint public, bao gồm query `k=<IMOU_CALLBACK_KEY>`.
-
-Workflow `gate-b-register` gọi:
-
-1. `accessToken`
-2. `setMessageCallback` với `callbackFlag=alarm`
-3. `getMessageCallback`
-
-Workflow không in query-string secret ra log. File `.gate-b-trigger` dùng để chạy lại đăng ký sau khi secrets đã sẵn sàng.
-
-Theo tài liệu Imou, callback phải public trên Internet và phải trả HTTP 200; cấu hình Message Push có thể mất vài phút để có hiệu lực.
-
-### Event cần xác minh
-
-Tài liệu Open Platform có định nghĩa `msgType=human` là Humanoid Detection alarm. Gate B vẫn phải đo trên chính IPC-F32P để chứng minh camera thực sự gửi `human` (hay một type khác) khi người đi vào vùng đã cấu hình.
+Ngoài ra có access-token refresh không thường xuyên. Nếu cần nhiều client mở liên tục hoặc background alert, kiến trúc cần chuyển sang một collector dùng chung thay vì mỗi client tự polling.
 
 ## Test
 
 ```bash
 npm test
 ```
+
+Test bao phủ:
+
+- Imou request signing.
+- Direct `getAlarmMessage` và negative assertion không dùng `shareDeviceList` trên production poll.
+- Access-key rejection trước khi gọi Imou.
+- Chỉ nhận type `33000`.
+- Sanitization của alarm metadata.
+- First-use baseline.
+- Duplicate suppression.
+- Cooldown 299 giây / 300 giây.
+- State restore sau reload.
+- Visible/hidden polling policy.
