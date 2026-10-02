@@ -134,7 +134,7 @@ test("alarm callback registration uses alarm-only push and sanitized verificatio
 
   assert.equal(setCall.params.status, "on");
   assert.equal(setCall.params.callbackFlag, "alarm");
-  assert.equal(setCall.params.basePush, "2");
+  assert.equal(setCall.params.basePush, "1");
   assert.equal(setCall.params.token, "test-access-token");
   assert.equal(registered.callbackTarget.hasQuery, true);
   assert.equal(current.status, "on");
