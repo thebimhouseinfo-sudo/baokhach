@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node --test",
     "probe": "node scripts/probe-imou.mjs",
-    "callback:register": "node scripts/register-imou-callback.mjs"
+    "callback:register": "node scripts/register-imou-callback.mjs",
+    "alarms:probe": "node scripts/probe-imou-alarms.mjs"
   },
   "engines": {
     "node": ">=20"
