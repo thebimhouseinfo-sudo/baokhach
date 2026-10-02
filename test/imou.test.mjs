@@ -103,7 +103,7 @@ test("alarm callback registration uses alarm-only push and sanitized verificatio
               code: "0",
               data: {
                 status: "on",
-                callbackFlag: "alarm",
+                callbackFlag: "alarm,iot",
                 callbackUrl:
                   "https://baokhach.example/api/imou-callback?k=test-callback-key"
               }
@@ -133,12 +133,12 @@ test("alarm callback registration uses alarm-only push and sanitized verificatio
   );
 
   assert.equal(setCall.params.status, "on");
-  assert.equal(setCall.params.callbackFlag, "alarm");
+  assert.equal(setCall.params.callbackFlag, "alarm,iot");
   assert.equal(setCall.params.basePush, "1");
   assert.equal(setCall.params.token, "test-access-token");
   assert.equal(registered.callbackTarget.hasQuery, true);
   assert.equal(current.status, "on");
-  assert.equal(current.callbackFlag, "alarm");
+  assert.equal(current.callbackFlag, "alarm,iot");
   assert.equal(current.callbackTarget.hasQuery, true);
   assert.equal(
     JSON.stringify({ registered, current }).includes("test-callback-key"),
