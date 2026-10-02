@@ -2,42 +2,80 @@
 <html lang="vi">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light dark">
-  <title>Báo khách — Gate A</title>
-  <style>
-    :root { font-family: system-ui, sans-serif; line-height: 1.5; }
-    body { margin: 0; padding: 24px; max-width: 760px; margin-inline: auto; }
-    .card { border: 1px solid #8885; border-radius: 16px; padding: 20px; }
-    .row { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; }
-    code { overflow-wrap: anywhere; }
-  </style>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="description" content="Báo khách bằng Human Detection của camera Imou">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <title>Báo khách</title>
 </head>
 <body>
-  <h1>Báo khách</h1>
-  <p>Gate A — kiểm tra kết nối Imou Open Platform. Trang này không hiển thị credential hoặc serial camera.</p>
-  <section class="card">
-    <div class="row"><span>Backend</span><span id="backend">Đang kiểm tra…</span></div>
-    <div class="row"><span>AppId</span><span id="appId">—</span></div>
-    <div class="row"><span>AppSecret</span><span id="appSecret">—</span></div>
-    <div class="row"><span>Probe key</span><span id="probeKey">—</span></div>
-    <div class="row"><span>Data center</span><span id="dataCenter">—</span></div>
-  </section>
-  <p>Probe thật được bảo vệ bằng server-side <code>IMOU_PROBE_KEY</code> và chỉ trả dữ liệu camera đã được làm sạch.</p>
-  <script>
-    fetch("/api/health", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((data) => {
-        const yesNo = (value) => value ? "Đã cấu hình" : "Chưa cấu hình";
-        document.querySelector("#backend").textContent = data.ok ? "Sẵn sàng" : "Lỗi";
-        document.querySelector("#appId").textContent = yesNo(data.configured?.appId);
-        document.querySelector("#appSecret").textContent = yesNo(data.configured?.appSecret);
-        document.querySelector("#probeKey").textContent = yesNo(data.configured?.probeKey);
-        document.querySelector("#dataCenter").textContent = data.dataCenter || "—";
-      })
-      .catch(() => {
-        document.querySelector("#backend").textContent = "Không kết nối được";
-      });
-  </script>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">IMOU HUMAN DETECTION</p>
+        <h1>Báo khách</h1>
+        <p class="subtitle">Theo dõi vùng phát hiện đã cấu hình trên camera và phát “Có khách”.</p>
+      </div>
+      <div class="status-pill" aria-live="polite">
+        <span id="status-dot" class="status-dot" data-state="paused"></span>
+        <span id="status-text">Đang khởi động…</span>
+      </div>
+    </header>
+
+    <section id="access-panel" class="card access-card">
+      <h2>Mã truy cập</h2>
+      <p>Nhập mã <strong>BAOKHACH_APP_KEY</strong> bạn đã đặt trên Vercel. Mã chỉ được lưu trên thiết bị này.</p>
+      <form id="key-form" class="key-form">
+        <label for="app-key">Mã truy cập</label>
+        <div class="input-row">
+          <input id="app-key" type="password" autocomplete="current-password" required>
+          <button type="submit">Bắt đầu</button>
+        </div>
+      </form>
+      <p id="access-error" class="error-text" role="alert"></p>
+    </section>
+
+    <section id="app-panel" hidden>
+      <div class="grid">
+        <article class="card primary-card">
+          <div class="card-heading">
+            <div>
+              <p class="label">Thông báo âm thanh</p>
+              <h2 id="audio-state">Chưa bật</h2>
+            </div>
+            <button id="enable-audio" class="primary-action" type="button">Bật / thử âm thanh</button>
+          </div>
+          <p class="helper">Trình duyệt cần một lần bấm trực tiếp để cho phép phát giọng nói.</p>
+        </article>
+
+        <article class="card metric-card">
+          <p class="label">Phát hiện gần nhất</p>
+          <strong id="last-detection">Chưa có</strong>
+        </article>
+
+        <article class="card metric-card">
+          <p class="label">Đã báo gần nhất</p>
+          <strong id="last-alert">Chưa có</strong>
+        </article>
+
+        <article class="card metric-card">
+          <p class="label">Thời gian chờ</p>
+          <strong id="cooldown">Sẵn sàng</strong>
+        </article>
+      </div>
+
+      <section class="card activity-card">
+        <p class="label">Trạng thái</p>
+        <p id="activity">Đang chờ dữ liệu Human Detection mới.</p>
+        <p class="helper">Ứng dụng kiểm tra mỗi 15 giây khi trang đang mở. Khi app ở nền hoặc điện thoại bị khóa, việc kiểm tra không được đảm bảo.</p>
+      </section>
+
+      <button id="forget-key" class="text-button" type="button">Quên mã truy cập trên thiết bị này</button>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
 </body>
 </html>
