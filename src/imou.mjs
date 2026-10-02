@@ -304,3 +304,124 @@ export async function readMessageCallback({
       : null
   };
 }
+
+
+function formatDateInTimeZone(date, timeZone = "Asia/Ho_Chi_Minh") {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  })
+    .formatToParts(date)
+    .reduce((acc, part) => {
+      acc[part.type] = part.value;
+      return acc;
+    }, {});
+
+  return (
+    parts.year +
+    "-" +
+    parts.month +
+    "-" +
+    parts.day +
+    " " +
+    parts.hour +
+    ":" +
+    parts.minute +
+    ":" +
+    parts.second
+  );
+}
+
+function sanitizeAlarmMessage(alarm) {
+  return {
+    alarmRef: alarm?.alarmId
+      ? crypto
+          .createHash("sha256")
+          .update(String(alarm.alarmId), "utf8")
+          .digest("hex")
+          .slice(0, 16)
+      : null,
+    time: alarm?.time ?? null,
+    localDate: alarm?.localDate ?? null,
+    type: alarm?.type ?? null,
+    channelId: alarm?.channelId ?? null,
+    hasPictures:
+      Array.isArray(alarm?.picurlArray) && alarm.picurlArray.length > 0,
+    hasThumbnail: Boolean(alarm?.thumbUrl)
+  };
+}
+
+export async function probeRecentAlarmMessages({
+  appId,
+  appSecret,
+  dataCenter = "sg",
+  fetchImpl = globalThis.fetch,
+  timeZone = "Asia/Ho_Chi_Minh",
+  lookbackMinutes = 180
+}) {
+  const config = { appId, appSecret, dataCenter, fetchImpl };
+  const token = await getAccessToken(config);
+  const shared = await callImou(
+    "shareDeviceList",
+    { token, queryRange: "1-20" },
+    config
+  );
+
+  let rawDevices = shared?.deviceList ?? shared?.devices;
+  if (typeof rawDevices === "string") {
+    try {
+      rawDevices = JSON.parse(rawDevices);
+    } catch {
+      rawDevices = [];
+    }
+  }
+
+  const devices = Array.isArray(rawDevices)
+    ? rawDevices
+    : rawDevices && typeof rawDevices === "object"
+      ? [rawDevices]
+      : [];
+
+  const device = devices[0];
+  const channel = Array.isArray(device?.channels) ? device.channels[0] : null;
+
+  if (!device?.deviceId || channel?.channelId === undefined || channel?.channelId === null) {
+    throw new ImouApiError("No shared camera/channel available for alarm probe.", {
+      code: "NO_SHARED_CAMERA",
+      status: 502
+    });
+  }
+
+  const end = new Date();
+  const begin = new Date(end.getTime() - Math.max(1, lookbackMinutes) * 60 * 1000);
+
+  const data = await callImou(
+    "getAlarmMessage",
+    {
+      token,
+      deviceId: String(device.deviceId),
+      channelId: String(channel.channelId),
+      beginTime: formatDateInTimeZone(begin, timeZone),
+      endTime: formatDateInTimeZone(end, timeZone),
+      count: 30,
+      nextAlarmId: "-1"
+    },
+    config
+  );
+
+  const alarms = Array.isArray(data?.alarms) ? data.alarms : [];
+
+  return {
+    dataCenter,
+    timeZone,
+    lookbackMinutes,
+    count: Number(data?.count ?? alarms.length),
+    alarms: alarms.map(sanitizeAlarmMessage)
+  };
+}
