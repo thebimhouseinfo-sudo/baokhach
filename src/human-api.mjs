@@ -14,19 +14,10 @@ export async function buildHumanEventsResponse({
     };
   }
 
-  const required = [
-    "IMOU_APP_ID",
-    "IMOU_APP_SECRET",
-    "IMOU_DEVICE_ID",
-    "IMOU_CHANNEL_ID",
-    "BAOKHACH_APP_KEY"
-  ];
-  const missing = required.filter((name) => !env?.[name]);
-
-  if (missing.length) {
+  if (!env?.BAOKHACH_APP_KEY) {
     return {
       status: 503,
-      body: { ok: false, error: "not_configured", missing }
+      body: { ok: false, error: "not_configured" }
     };
   }
 
@@ -34,6 +25,21 @@ export async function buildHumanEventsResponse({
     return {
       status: 401,
       body: { ok: false, error: "unauthorized" }
+    };
+  }
+
+  const required = [
+    "IMOU_APP_ID",
+    "IMOU_APP_SECRET",
+    "IMOU_DEVICE_ID",
+    "IMOU_CHANNEL_ID"
+  ];
+  const missing = required.filter((name) => !env?.[name]);
+
+  if (missing.length) {
+    return {
+      status: 503,
+      body: { ok: false, error: "not_configured", missing }
     };
   }
 
