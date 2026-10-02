@@ -193,7 +193,13 @@ export async function probeSharedDevices({
     config
   );
 
-  const devices = Array.isArray(data?.deviceList) ? data.deviceList : [];
+  const rawDeviceList = data?.deviceList;
+  const devices = Array.isArray(rawDeviceList)
+    ? rawDeviceList
+    : rawDeviceList && typeof rawDeviceList === "object"
+      ? [rawDeviceList]
+      : [];
+
   return {
     dataCenter,
     count: Number(data?.count ?? devices.length),
