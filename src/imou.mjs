@@ -227,3 +227,80 @@ export async function probeSharedDevices({
     }
   };
 }
+
+
+export function sanitizeCallbackUrl(callbackUrl) {
+  let url;
+  try {
+    url = new URL(String(callbackUrl || ""));
+  } catch {
+    throw new ImouApiError("Invalid callback URL.", {
+      code: "INVALID_CALLBACK_URL",
+      status: 500
+    });
+  }
+
+  if (url.protocol !== "https:") {
+    throw new ImouApiError("Imou callback URL must use HTTPS.", {
+      code: "INVALID_CALLBACK_URL",
+      status: 500
+    });
+  }
+
+  return {
+    origin: url.origin,
+    pathname: url.pathname,
+    hasQuery: Boolean(url.search)
+  };
+}
+
+export async function registerAlarmCallback({
+  appId,
+  appSecret,
+  callbackUrl,
+  dataCenter = "sg",
+  fetchImpl = globalThis.fetch
+}) {
+  const callbackTarget = sanitizeCallbackUrl(callbackUrl);
+  const config = { appId, appSecret, dataCenter, fetchImpl };
+  const token = await getAccessToken(config);
+
+  await callImou(
+    "setMessageCallback",
+    {
+      token,
+      status: "on",
+      callbackUrl,
+      callbackFlag: "alarm",
+      basePush: "2"
+    },
+    config
+  );
+
+  return {
+    dataCenter,
+    status: "on",
+    callbackFlag: "alarm",
+    basePush: "2",
+    callbackTarget
+  };
+}
+
+export async function readMessageCallback({
+  appId,
+  appSecret,
+  dataCenter = "sg",
+  fetchImpl = globalThis.fetch
+}) {
+  const config = { appId, appSecret, dataCenter, fetchImpl };
+  const token = await getAccessToken(config);
+  const data = await callImou("getMessageCallback", { token }, config);
+
+  return {
+    status: data?.status ?? null,
+    callbackFlag: data?.callbackFlag ?? "",
+    callbackTarget: data?.callbackUrl
+      ? sanitizeCallbackUrl(data.callbackUrl)
+      : null
+  };
+}
