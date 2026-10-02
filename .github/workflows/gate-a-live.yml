@@ -1,0 +1,31 @@
+name: gate-a-live
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/imou.mjs"
+      - "scripts/probe-imou.mjs"
+      - ".gate-a-trigger"
+      - ".github/workflows/gate-a-live.yml"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      IMOU_APP_ID: ${{ secrets.IMOU_APP_ID }}
+      IMOU_APP_SECRET: ${{ secrets.IMOU_APP_SECRET }}
+      IMOU_DATA_CENTER: ${{ vars.IMOU_DATA_CENTER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Probe shared Imou devices
+        if: ${{ env.IMOU_APP_ID != '' && env.IMOU_APP_SECRET != '' }}
+        run: npm run probe
+        env:
+          IMOU_DATA_CENTER: ${{ env.IMOU_DATA_CENTER || 'sg' }}
+      - name: Secrets not configured
+        if: ${{ env.IMOU_APP_ID == '' || env.IMOU_APP_SECRET == '' }}
+        run: echo "Gate A live probe skipped because repository secrets are not configured."
