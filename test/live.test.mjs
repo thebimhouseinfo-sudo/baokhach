@@ -8,10 +8,9 @@ import {
 } from "../src/imou.mjs";
 import { buildLiveSessionResponse } from "../src/live-api.mjs";
 import {
-  LIVE_DIM_IDLE_MS,
-  shouldDimLive,
   shouldStopLiveForVisibility,
-  liveToggleLabel
+  liveToggleLabel,
+  streamAudioLabel
 } from "../src/live-ui.mjs";
 
 function jsonResponse(result, ok = true, status = 200) {
@@ -245,22 +244,6 @@ test("authorized live-session response exposes only minimal player fields", asyn
   assert.equal(JSON.stringify(response.body).includes("cover.jpg"), false);
 });
 
-test("live dimming starts after 45 seconds only while active", () => {
-  assert.equal(LIVE_DIM_IDLE_MS, 45000);
-  assert.equal(
-    shouldDimLive({ active: true, lastInteractionAt: 1000, now: 45999 }),
-    false
-  );
-  assert.equal(
-    shouldDimLive({ active: true, lastInteractionAt: 1000, now: 46000 }),
-    true
-  );
-  assert.equal(
-    shouldDimLive({ active: false, lastInteractionAt: 1000, now: 999999 }),
-    false
-  );
-});
-
 test("live playback must stop whenever document is not visible", () => {
   assert.equal(shouldStopLiveForVisibility("visible"), false);
   assert.equal(shouldStopLiveForVisibility("hidden"), true);
@@ -320,8 +303,13 @@ test("empty live stream list binds SD stream then re-queries", async () => {
 });
 
 
-test("live toggle remains an explicit cancel action while opening", () => {
-  assert.equal(liveToggleLabel({ active: false, loading: false }), "Xem trực tiếp");
+test("live toggle remains explicit across off, opening and active states", () => {
+  assert.equal(liveToggleLabel({ active: false, loading: false }), "Bật video");
   assert.equal(liveToggleLabel({ active: false, loading: true }), "Hủy mở video");
   assert.equal(liveToggleLabel({ active: true, loading: false }), "Tắt video");
+});
+
+test("camera-stream audio control has clear mute labels", () => {
+  assert.equal(streamAudioLabel(true), "Bật tiếng");
+  assert.equal(streamAudioLabel(false), "Tắt tiếng");
 });
