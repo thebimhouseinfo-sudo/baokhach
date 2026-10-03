@@ -13,9 +13,16 @@ import {
   liveToggleLabel,
   streamAudioLabel
 } from "./src/live-ui.mjs";
+import {
+  DEFAULT_ALERT_VOLUME_LEVEL,
+  normalizeAlertVolumeLevel,
+  alertVolumeForLevel
+} from "./src/alert-audio.mjs";
 
 const KEY_STORAGE = "baokhach.appKey.v1";
 const STATE_STORAGE = "baokhach.state.v1";
+const ALERT_VOLUME_STORAGE = "baokhach.alertVolume.v1";
+const ALERT_AUDIO_URL = "/src/có_khách_kìa_bà_chủ.mp3";
 const HLS_JS_URL = "https://cdn.jsdelivr.net/npm/hls.js@1.7.3/+esm";
 
 const els = {
@@ -24,10 +31,15 @@ const els = {
   keyForm: document.querySelector("#key-form"),
   keyInput: document.querySelector("#app-key"),
   accessError: document.querySelector("#access-error"),
-  connectionPill: document.querySelector("#connection-pill"),
+
+  settingsButton: document.querySelector("#settings-button"),
+  settingsDialog: document.querySelector("#settings-dialog"),
+  settingsClose: document.querySelector("#settings-close"),
+  connectionState: document.querySelector("#connection-state"),
   connectionIcon: document.querySelector("#connection-icon"),
   connectionText: document.querySelector("#connection-text"),
-  videoStage: document.querySelector("#video-stage"),
+  volumeOptions: [...document.querySelectorAll("[data-volume-level]")],
+
   liveVideo: document.querySelector("#live-video"),
   videoMessage: document.querySelector("#video-message"),
   videoToggle: document.querySelector("#video-toggle"),
@@ -36,10 +48,16 @@ const els = {
 
 let appKey = localStorage.getItem(KEY_STORAGE) || "";
 let clientState = readState();
-let connected = false;
+let alertVolumeLevel = normalizeAlertVolumeLevel(
+  localStorage.getItem(ALERT_VOLUME_STORAGE) || DEFAULT_ALERT_VOLUME_LEVEL
+);
+
 let pollTimer = null;
 let pollInFlight = false;
 let lastVisibility = document.visibilityState;
+
+let alertAudio = null;
+let alertAudioPrimed = false;
 
 let liveActive = false;
 let liveLoading = false;
@@ -62,9 +80,19 @@ function saveState() {
   localStorage.setItem(STATE_STORAGE, JSON.stringify(clientState));
 }
 
+function getAlertAudio() {
+  if (!alertAudio) {
+    alertAudio = new Audio(ALERT_AUDIO_URL);
+    alertAudio.preload = "auto";
+  }
+
+  alertAudio.volume = alertVolumeForLevel(alertVolumeLevel);
+  return alertAudio;
+}
+
 function setConnected(value) {
-  connected = Boolean(value);
-  els.connectionPill.dataset.connected = connected ? "true" : "false";
+  const connected = Boolean(value);
+  els.connectionState.dataset.connected = connected ? "true" : "false";
   els.connectionIcon.textContent = connected ? "✓" : "✕";
   els.connectionText.textContent = connected ? "Đã kết nối" : "Chưa kết nối";
 }
@@ -86,18 +114,45 @@ function render() {
 
   els.streamAudioToggle.textContent = streamAudioLabel(liveMuted);
   els.streamAudioToggle.disabled = !liveActive;
+
+  for (const button of els.volumeOptions) {
+    button.setAttribute(
+      "aria-pressed",
+      button.dataset.volumeLevel === alertVolumeLevel ? "true" : "false"
+    );
+  }
 }
 
-function speakVisitor() {
-  if (!("speechSynthesis" in window)) return false;
+async function primeAlertAudio() {
+  if (alertAudioPrimed) return;
+
+  const audio = getAlertAudio();
+  const intendedVolume = alertVolumeForLevel(alertVolumeLevel);
 
   try {
-    window.speechSynthesis.cancel();
-    const message = new SpeechSynthesisUtterance("Có khách");
-    message.lang = "vi-VN";
-    message.rate = 0.95;
-    message.pitch = 1;
-    window.speechSynthesis.speak(message);
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = 0;
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+    alertAudioPrimed = true;
+  } catch {
+    // A later direct interaction may succeed; keep retryable.
+  } finally {
+    audio.volume = intendedVolume;
+  }
+}
+
+async function playVisitorAlert() {
+  const audio = getAlertAudio();
+
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = alertVolumeForLevel(alertVolumeLevel);
+    await audio.play();
+    alertAudioPrimed = true;
     return true;
   } catch {
     return false;
@@ -142,9 +197,12 @@ async function pollOnce() {
     clientState = result.state;
     saveState();
 
-    if (result.shouldAnnounce && speakVisitor()) {
-      clientState = markAlertPlayed(clientState, Date.now());
-      saveState();
+    if (result.shouldAnnounce) {
+      const played = await playVisitorAlert();
+      if (played) {
+        clientState = markAlertPlayed(clientState, Date.now());
+        saveState();
+      }
     }
   } catch {
     setConnected(false);
@@ -284,9 +342,7 @@ async function startLive() {
     if (generation !== liveGeneration) return;
 
     if (!response.ok || !payload.ok || !payload.hls) {
-      if (response.status === 503) {
-        throw new Error("camera_not_configured");
-      }
+      if (response.status === 503) throw new Error("camera_not_configured");
       throw new Error(payload.error || "live_session_failed");
     }
 
@@ -344,6 +400,22 @@ async function toggleStreamAudio() {
   render();
 }
 
+function openSettings() {
+  if (typeof els.settingsDialog.showModal === "function") {
+    if (!els.settingsDialog.open) els.settingsDialog.showModal();
+  } else {
+    els.settingsDialog.setAttribute("open", "");
+  }
+}
+
+function closeSettings() {
+  if (typeof els.settingsDialog.close === "function") {
+    if (els.settingsDialog.open) els.settingsDialog.close();
+  } else {
+    els.settingsDialog.removeAttribute("open");
+  }
+}
+
 els.keyForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const value = els.keyInput.value.trim();
@@ -355,10 +427,34 @@ els.keyForm.addEventListener("submit", (event) => {
   els.accessError.textContent = "";
   setConnected(false);
   render();
+  void primeAlertAudio();
   startPolling({ immediate: true });
 });
 
+els.settingsButton.addEventListener("click", () => {
+  void primeAlertAudio();
+  openSettings();
+});
+
+els.settingsClose.addEventListener("click", closeSettings);
+
+els.settingsDialog.addEventListener("click", (event) => {
+  if (event.target === els.settingsDialog) closeSettings();
+});
+
+for (const button of els.volumeOptions) {
+  button.addEventListener("click", () => {
+    alertVolumeLevel = normalizeAlertVolumeLevel(button.dataset.volumeLevel);
+    localStorage.setItem(ALERT_VOLUME_STORAGE, alertVolumeLevel);
+    getAlertAudio().volume = alertVolumeForLevel(alertVolumeLevel);
+    render();
+    void primeAlertAudio();
+  });
+}
+
 els.videoToggle.addEventListener("click", () => {
+  void primeAlertAudio();
+
   if (liveActive || liveLoading) {
     stopLive();
   } else {
@@ -368,12 +464,15 @@ els.videoToggle.addEventListener("click", () => {
 
 els.streamAudioToggle.addEventListener("click", toggleStreamAudio);
 
+els.liveVideo.addEventListener("volumechange", () => {
+  liveMuted = els.liveVideo.muted;
+  render();
+});
+
 document.addEventListener(
   "pointerdown",
   () => {
-    try {
-      window.speechSynthesis?.resume();
-    } catch {}
+    void primeAlertAudio();
   },
   { once: true, passive: true }
 );
