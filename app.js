@@ -9,9 +9,14 @@ import {
   shouldPoll,
   shouldPollImmediatelyOnVisibilityChange
 } from "./src/polling.mjs";
+import {
+  LIVE_DIM_IDLE_MS,
+  shouldStopLiveForVisibility
+} from "./src/live-ui.mjs";
 
 const KEY_STORAGE = "baokhach.appKey.v1";
 const STATE_STORAGE = "baokhach.state.v1";
+const HLS_JS_URL = "https://cdn.jsdelivr.net/npm/hls.js@1.7.3/+esm";
 
 const els = {
   accessPanel: document.querySelector("#access-panel"),
@@ -27,7 +32,11 @@ const els = {
   lastAlert: document.querySelector("#last-alert"),
   cooldown: document.querySelector("#cooldown"),
   accessError: document.querySelector("#access-error"),
-  activity: document.querySelector("#activity")
+  activity: document.querySelector("#activity"),
+  liveToggle: document.querySelector("#live-toggle"),
+  liveStatus: document.querySelector("#live-status"),
+  liveFrame: document.querySelector("#live-frame"),
+  liveVideo: document.querySelector("#live-video")
 };
 
 let appKey = localStorage.getItem(KEY_STORAGE) || "";
@@ -37,9 +46,17 @@ let pollTimer = null;
 let lastVisibility = document.visibilityState;
 let pollInFlight = false;
 
+let liveActive = false;
+let liveLoading = false;
+let liveDimmed = false;
+let liveDimTimer = null;
+let hlsInstance = null;
+
 function readState() {
   try {
-    return normalizeClientState(JSON.parse(localStorage.getItem(STATE_STORAGE) || "{}"));
+    return normalizeClientState(
+      JSON.parse(localStorage.getItem(STATE_STORAGE) || "{}")
+    );
   } catch {
     return normalizeClientState();
   }
@@ -52,6 +69,10 @@ function saveState() {
 function setStatus(kind, text) {
   els.statusDot.dataset.state = kind;
   els.statusText.textContent = text;
+}
+
+function setLiveStatus(text) {
+  els.liveStatus.textContent = text;
 }
 
 function formatTimestamp(value) {
@@ -79,6 +100,16 @@ function renderState() {
   els.lastDetection.textContent = formatTimestamp(clientState.lastDetectionAtMs);
   els.lastAlert.textContent = formatTimestamp(clientState.lastAlertAtMs);
   els.cooldown.textContent = formatCooldown(cooldownRemainingMs(clientState));
+
+  els.liveToggle.disabled = liveLoading;
+  els.liveToggle.textContent = liveLoading
+    ? "Đang mở…"
+    : liveActive
+      ? "Tắt video"
+      : "Xem trực tiếp";
+  els.liveToggle.dataset.active = liveActive ? "true" : "false";
+  els.liveFrame.hidden = !liveActive;
+  els.liveFrame.classList.toggle("is-dimmed", liveDimmed);
 }
 
 function speakVisitor() {
@@ -97,6 +128,16 @@ function speakVisitor() {
   }
 }
 
+function clearAppKey(message = "Mã truy cập không đúng. Hãy nhập lại.") {
+  appKey = "";
+  localStorage.removeItem(KEY_STORAGE);
+  stopPolling();
+  stopLive({ reason: "auth", statusText: "Đã tắt video" });
+  els.accessError.textContent = message;
+  setStatus("error", "Cần đăng nhập lại");
+  renderState();
+}
+
 async function pollOnce() {
   if (!appKey || pollInFlight || !shouldPoll(document.visibilityState)) return;
 
@@ -113,12 +154,7 @@ async function pollOnce() {
     });
 
     if (response.status === 401) {
-      appKey = "";
-      localStorage.removeItem(KEY_STORAGE);
-      stopPolling();
-      els.accessError.textContent = "Mã truy cập không đúng. Hãy nhập lại.";
-      setStatus("error", "Cần đăng nhập lại");
-      renderState();
+      clearAppKey();
       return;
     }
 
@@ -178,6 +214,153 @@ function startPolling({ immediate = true } = {}) {
   pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
 }
 
+function clearDimTimer() {
+  if (liveDimTimer) {
+    clearTimeout(liveDimTimer);
+    liveDimTimer = null;
+  }
+}
+
+function setLiveDimmed(value) {
+  liveDimmed = Boolean(value) && liveActive;
+  renderState();
+}
+
+function wakeLiveView() {
+  if (!liveActive) return;
+
+  setLiveDimmed(false);
+  clearDimTimer();
+  liveDimTimer = setTimeout(() => {
+    if (liveActive) setLiveDimmed(true);
+  }, LIVE_DIM_IDLE_MS);
+}
+
+function destroyPlayer() {
+  clearDimTimer();
+
+  if (hlsInstance) {
+    try {
+      hlsInstance.destroy();
+    } catch {}
+    hlsInstance = null;
+  }
+
+  try {
+    els.liveVideo.pause();
+    els.liveVideo.removeAttribute("src");
+    els.liveVideo.load();
+  } catch {}
+
+  liveActive = false;
+  liveLoading = false;
+  liveDimmed = false;
+}
+
+function stopLive({
+  reason = "user",
+  statusText = reason === "hidden"
+    ? "Video đã tắt khi app chuyển sang nền."
+    : "Video đang tắt."
+} = {}) {
+  destroyPlayer();
+  setLiveStatus(statusText);
+  renderState();
+}
+
+async function attachHls(hlsUrl) {
+  if (els.liveVideo.canPlayType("application/vnd.apple.mpegurl")) {
+    els.liveVideo.src = hlsUrl;
+    await els.liveVideo.play();
+    return;
+  }
+
+  const module = await import(HLS_JS_URL);
+  const Hls = module.default || module.Hls;
+
+  if (!Hls?.isSupported?.()) {
+    throw new Error("hls_not_supported");
+  }
+
+  const instance = new Hls({
+    enableWorker: true,
+    lowLatencyMode: false,
+    backBufferLength: 0,
+    maxBufferLength: 12
+  });
+  hlsInstance = instance;
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("hls_load_failed"));
+    };
+
+    instance.on(Hls.Events.MANIFEST_PARSED, () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    });
+
+    instance.on(Hls.Events.ERROR, (_event, data) => {
+      if (data?.fatal) fail();
+    });
+
+    instance.attachMedia(els.liveVideo);
+    instance.loadSource(hlsUrl);
+  });
+
+  await els.liveVideo.play();
+}
+
+async function startLive() {
+  if (!appKey || liveLoading || liveActive) return;
+  if (shouldStopLiveForVisibility(document.visibilityState)) return;
+
+  liveLoading = true;
+  setLiveStatus("Đang xin luồng trực tiếp từ camera…");
+  renderState();
+
+  try {
+    const response = await fetch("/api/live-session", {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        Authorization: "Bearer " + appKey
+      }
+    });
+
+    if (response.status === 401) {
+      clearAppKey();
+      return;
+    }
+
+    const payload = await response.json();
+    if (!response.ok || !payload.ok || !payload.hls) {
+      throw new Error(payload.error || "live_session_failed");
+    }
+
+    destroyPlayer();
+    liveLoading = true;
+    els.liveVideo.muted = true;
+    els.liveVideo.playsInline = true;
+    await attachHls(payload.hls);
+
+    liveActive = true;
+    liveLoading = false;
+    setLiveStatus("Đang xem trực tiếp · SD · tắt tiếng");
+    wakeLiveView();
+    renderState();
+  } catch {
+    destroyPlayer();
+    setLiveStatus("Không mở được video trực tiếp. Hãy thử lại.");
+    renderState();
+  }
+}
+
 els.keyForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const value = els.keyInput.value.trim();
@@ -195,6 +378,7 @@ els.forgetKey.addEventListener("click", () => {
   appKey = "";
   localStorage.removeItem(KEY_STORAGE);
   stopPolling();
+  stopLive({ statusText: "Video đang tắt." });
   setStatus("paused", "Chưa có mã truy cập");
   renderState();
 });
@@ -211,6 +395,20 @@ els.enableAudio.addEventListener("click", () => {
   els.activity.textContent = "Đã bật âm thanh thử.";
 });
 
+els.liveToggle.addEventListener("click", () => {
+  if (liveActive || liveLoading) {
+    stopLive();
+  } else {
+    startLive();
+  }
+});
+
+for (const eventName of ["pointerdown", "touchstart"]) {
+  els.liveFrame.addEventListener(eventName, wakeLiveView, { passive: true });
+}
+
+window.addEventListener("keydown", wakeLiveView);
+
 document.addEventListener("visibilitychange", () => {
   const nextVisibility = document.visibilityState;
   const immediate = shouldPollImmediatelyOnVisibilityChange(
@@ -218,6 +416,10 @@ document.addEventListener("visibilitychange", () => {
     nextVisibility
   );
   lastVisibility = nextVisibility;
+
+  if (shouldStopLiveForVisibility(nextVisibility) && (liveActive || liveLoading)) {
+    stopLive({ reason: "hidden" });
+  }
 
   if (!shouldPoll(nextVisibility)) {
     stopPolling();
@@ -237,6 +439,7 @@ if ("serviceWorker" in navigator) {
 }
 
 renderState();
+setLiveStatus("Video đang tắt.");
 if (appKey) {
   startPolling({ immediate: true });
 } else {
