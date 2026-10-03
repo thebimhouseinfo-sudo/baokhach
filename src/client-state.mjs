@@ -110,3 +110,21 @@ export function cooldownRemainingMs(currentState, nowMs = Date.now()) {
   if (!state.lastAlertAtMs) return 0;
   return Math.max(0, COOLDOWN_MS - (nowMs - state.lastAlertAtMs));
 }
+
+
+export function finalizeAlertAttempt(
+  previousState,
+  ingestResult,
+  played,
+  nowMs = Date.now()
+) {
+  if (!ingestResult?.shouldAnnounce) {
+    return normalizeClientState(ingestResult?.state ?? previousState);
+  }
+
+  if (!played) {
+    return normalizeClientState(previousState);
+  }
+
+  return markAlertPlayed(ingestResult.state, nowMs);
+}
