@@ -1,4 +1,4 @@
-const CACHE = "baokhach-v1";
+const CACHE = "baokhach-v2";
 const SHELL = [
   "/",
   "/index.html",
@@ -6,6 +6,7 @@ const SHELL = [
   "/app.js",
   "/src/client-state.mjs",
   "/src/polling.mjs",
+  "/src/live-ui.mjs",
   "/manifest.webmanifest",
   "/icon.svg"
 ];
@@ -26,7 +27,15 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (event.request.method !== "GET" || url.pathname.startsWith("/api/")) return;
+
+  if (
+    event.request.method !== "GET" ||
+    url.origin !== self.location.origin ||
+    url.pathname.startsWith("/api/") ||
+    !SHELL.includes(url.pathname)
+  ) {
+    return;
+  }
 
   event.respondWith(
     fetch(event.request)
