@@ -368,6 +368,16 @@ els.videoToggle.addEventListener("click", () => {
 
 els.streamAudioToggle.addEventListener("click", toggleStreamAudio);
 
+document.addEventListener(
+  "pointerdown",
+  () => {
+    try {
+      window.speechSynthesis?.resume();
+    } catch {}
+  },
+  { once: true, passive: true }
+);
+
 document.addEventListener("visibilitychange", () => {
   const nextVisibility = document.visibilityState;
   const immediate = shouldPollImmediatelyOnVisibilityChange(
