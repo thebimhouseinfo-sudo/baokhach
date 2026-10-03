@@ -150,7 +150,6 @@ async function pollOnce() {
     const response = await fetch("/api/human-events", {
       method: "GET",
       cache: "no-store",
-      signal: liveAbortController.signal,
       headers: {
         Authorization: "Bearer " + appKey
       }
@@ -349,6 +348,7 @@ async function startLive() {
     const response = await fetch("/api/live-session", {
       method: "GET",
       cache: "no-store",
+      signal: liveAbortController.signal,
       headers: {
         Authorization: "Bearer " + appKey
       }
