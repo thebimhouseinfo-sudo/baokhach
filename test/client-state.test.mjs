@@ -6,7 +6,8 @@ import {
   cooldownRemainingMs,
   ingestHumanEvents,
   markAlertPlayed,
-  normalizeClientState
+  normalizeClientState,
+  finalizeAlertAttempt
 } from "../src/client-state.mjs";
 import {
   POLL_INTERVAL_MS,
