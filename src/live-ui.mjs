@@ -1,23 +1,12 @@
-export const LIVE_DIM_IDLE_MS = 45000;
-
-export function shouldDimLive({
-  active,
-  lastInteractionAt,
-  now = Date.now(),
-  idleMs = LIVE_DIM_IDLE_MS
-}) {
-  if (!active) return false;
-  const last = Number(lastInteractionAt || 0);
-  if (!last) return false;
-  return now - last >= idleMs;
-}
-
 export function shouldStopLiveForVisibility(visibilityState) {
   return visibilityState !== "visible";
 }
 
-
 export function liveToggleLabel({ active = false, loading = false } = {}) {
   if (loading) return "Hủy mở video";
-  return active ? "Tắt video" : "Xem trực tiếp";
+  return active ? "Tắt video" : "Bật video";
+}
+
+export function streamAudioLabel(muted = true) {
+  return muted ? "Bật tiếng" : "Tắt tiếng";
 }
