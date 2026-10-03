@@ -16,7 +16,7 @@
       <div>
         <p class="eyebrow">IMOU HUMAN DETECTION</p>
         <h1>Báo khách</h1>
-        <p class="subtitle">Theo dõi vùng phát hiện đã cấu hình trên camera và phát “Có khách”.</p>
+        <p class="subtitle">Nghe báo “Có khách” và mở camera trực tiếp khi cần kiểm tra bằng mắt.</p>
       </div>
       <div class="status-pill" aria-live="polite">
         <span id="status-dot" class="status-dot" data-state="paused"></span>
@@ -48,6 +48,35 @@
             <button id="enable-audio" class="primary-action" type="button">Bật / thử âm thanh</button>
           </div>
           <p class="helper">Trình duyệt cần một lần bấm trực tiếp để cho phép phát giọng nói.</p>
+        </article>
+
+        <article class="card live-card">
+          <div class="card-heading live-heading">
+            <div>
+              <p class="label">Camera trực tiếp</p>
+              <h2>Xem hiện tại</h2>
+            </div>
+            <button id="live-toggle" class="live-toggle" type="button">Xem trực tiếp</button>
+          </div>
+
+          <p id="live-status" class="live-status" aria-live="polite">Video đang tắt.</p>
+
+          <div id="live-frame" class="live-frame" hidden tabindex="0" aria-label="Camera trực tiếp">
+            <video
+              id="live-video"
+              class="live-video"
+              muted
+              playsinline
+              preload="none"
+              disablepictureinpicture
+            ></video>
+            <div class="live-badge">LIVE · SD · TẮT TIẾNG</div>
+            <div class="live-dim-overlay" aria-hidden="true">
+              <span>Đã giảm sáng · chạm để xem rõ</span>
+            </div>
+          </div>
+
+          <p class="helper">Video chỉ mở khi bạn bấm xem, tự tắt khi app chuyển sang nền và giảm sáng sau 45 giây không thao tác.</p>
         </article>
 
         <article class="card metric-card">
