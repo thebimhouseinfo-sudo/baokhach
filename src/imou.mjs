@@ -518,3 +518,89 @@ export async function queryHumanDetections({
     lookbackSeconds: Math.max(30, Number(lookbackSeconds) || 120)
   };
 }
+
+
+export function selectSecureSdLiveStream(data) {
+  const streams = Array.isArray(data?.streams) ? data.streams : [];
+  const candidates = streams.filter((stream) => {
+    const hls = String(stream?.hls || "");
+    return Number(stream?.streamId) === 1 && /^https:\/\//i.test(hls);
+  });
+
+  if (!candidates.length) {
+    throw new ImouApiError("No secure standard-definition HLS stream is available.", {
+      code: "LIVE_HTTPS_SD_UNAVAILABLE",
+      status: 502
+    });
+  }
+
+  candidates.sort((a, b) => {
+    const aLive = String(a?.status ?? "") === "0" ? 0 : 1;
+    const bLive = String(b?.status ?? "") === "0" ? 0 : 1;
+    return aLive - bLive;
+  });
+
+  const selected = candidates[0];
+  return {
+    hls: String(selected.hls),
+    status: String(selected?.status ?? ""),
+    streamId: 1
+  };
+}
+
+function canAttemptLiveBind(error) {
+  if (!(error instanceof ImouApiError)) return false;
+
+  return !new Set([
+    "MISSING_CREDENTIALS",
+    "INVALID_DATA_CENTER",
+    "FETCH_UNAVAILABLE",
+    "IMOU_NETWORK_ERROR",
+    "IMOU_BAD_RESPONSE",
+    "TOKEN_MISSING"
+  ]).has(error.code);
+}
+
+export async function ensureLiveStream({
+  appId,
+  appSecret,
+  deviceId,
+  channelId = "0",
+  dataCenter = "sg",
+  fetchImpl = globalThis.fetch
+}) {
+  if (!deviceId && deviceId !== 0) {
+    throw new ImouApiError("Imou device is not configured.", {
+      code: "MISSING_DEVICE_ID",
+      status: 503
+    });
+  }
+
+  const config = { appId, appSecret, dataCenter, fetchImpl };
+  const token = await getAccessToken(config);
+  const params = {
+    token,
+    deviceId: String(deviceId),
+    channelId: String(channelId)
+  };
+
+  try {
+    const existing = await callImou("getLiveStreamInfo", params, config);
+    return selectSecureSdLiveStream(existing);
+  } catch (error) {
+    if (!canAttemptLiveBind(error)) throw error;
+  }
+
+  await callImou(
+    "bindDeviceLive",
+    {
+      ...params,
+      streamId: 1,
+      liveMode: "proxy"
+    },
+    config
+  );
+
+  const created = await callImou("getLiveStreamInfo", params, config);
+  return selectSecureSdLiveStream(created);
+}
