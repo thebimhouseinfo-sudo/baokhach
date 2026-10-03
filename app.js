@@ -1,6 +1,6 @@
 import {
   ingestHumanEvents,
-  markAlertPlayed,
+  finalizeAlertAttempt,
   normalizeClientState
 } from "./src/client-state.mjs";
 import {
@@ -193,17 +193,22 @@ async function pollOnce() {
 
     setConnected(true);
 
-    const result = ingestHumanEvents(clientState, payload.events, Date.now());
-    clientState = result.state;
-    saveState();
+    const previousState = clientState;
+    const result = ingestHumanEvents(previousState, payload.events, Date.now());
 
     if (result.shouldAnnounce) {
       const played = await playVisitorAlert();
-      if (played) {
-        clientState = markAlertPlayed(clientState, Date.now());
-        saveState();
-      }
+      clientState = finalizeAlertAttempt(
+        previousState,
+        result,
+        played,
+        Date.now()
+      );
+    } else {
+      clientState = result.state;
     }
+
+    saveState();
   } catch {
     setConnected(false);
   } finally {
