@@ -51,6 +51,8 @@ let liveLoading = false;
 let liveDimmed = false;
 let liveDimTimer = null;
 let hlsInstance = null;
+let liveGeneration = 0;
+let liveAbortController = null;
 
 function readState() {
   try {
@@ -148,6 +150,7 @@ async function pollOnce() {
     const response = await fetch("/api/human-events", {
       method: "GET",
       cache: "no-store",
+      signal: liveAbortController.signal,
       headers: {
         Authorization: "Bearer " + appKey
       }
@@ -239,6 +242,11 @@ function wakeLiveView() {
 function destroyPlayer() {
   clearDimTimer();
 
+  if (liveAbortController) {
+    liveAbortController.abort();
+    liveAbortController = null;
+  }
+
   if (hlsInstance) {
     try {
       hlsInstance.destroy();
@@ -263,12 +271,15 @@ function stopLive({
     ? "Video đã tắt khi app chuyển sang nền."
     : "Video đang tắt."
 } = {}) {
+  liveGeneration += 1;
   destroyPlayer();
   setLiveStatus(statusText);
   renderState();
 }
 
-async function attachHls(hlsUrl) {
+async function attachHls(hlsUrl, generation) {
+  if (generation !== liveGeneration) return;
+
   if (els.liveVideo.canPlayType("application/vnd.apple.mpegurl")) {
     els.liveVideo.src = hlsUrl;
     await els.liveVideo.play();
@@ -276,6 +287,8 @@ async function attachHls(hlsUrl) {
   }
 
   const module = await import(HLS_JS_URL);
+  if (generation !== liveGeneration) return;
+
   const Hls = module.default || module.Hls;
 
   if (!Hls?.isSupported?.()) {
@@ -301,6 +314,11 @@ async function attachHls(hlsUrl) {
 
     instance.on(Hls.Events.MANIFEST_PARSED, () => {
       if (settled) return;
+      if (generation !== liveGeneration) {
+        settled = true;
+        resolve();
+        return;
+      }
       settled = true;
       resolve();
     });
@@ -313,6 +331,7 @@ async function attachHls(hlsUrl) {
     instance.loadSource(hlsUrl);
   });
 
+  if (generation !== liveGeneration) return;
   await els.liveVideo.play();
 }
 
@@ -320,6 +339,8 @@ async function startLive() {
   if (!appKey || liveLoading || liveActive) return;
   if (shouldStopLiveForVisibility(document.visibilityState)) return;
 
+  const generation = ++liveGeneration;
+  liveAbortController = new AbortController();
   liveLoading = true;
   setLiveStatus("Đang xin luồng trực tiếp từ camera…");
   renderState();
@@ -339,23 +360,34 @@ async function startLive() {
     }
 
     const payload = await response.json();
+    if (generation !== liveGeneration) return;
+
     if (!response.ok || !payload.ok || !payload.hls) {
       throw new Error(payload.error || "live_session_failed");
     }
 
+    liveAbortController = null;
     destroyPlayer();
+    liveGeneration = generation;
     liveLoading = true;
     els.liveVideo.muted = true;
     els.liveVideo.playsInline = true;
-    await attachHls(payload.hls);
+    await attachHls(payload.hls, generation);
+    if (generation !== liveGeneration) {
+      destroyPlayer();
+      return;
+    }
 
     liveActive = true;
     liveLoading = false;
     setLiveStatus("Đang xem trực tiếp · SD · tắt tiếng");
     wakeLiveView();
     renderState();
-  } catch {
+  } catch (error) {
+    if (generation !== liveGeneration || error?.name === "AbortError") return;
+    liveAbortController = null;
     destroyPlayer();
+    liveGeneration = generation;
     setLiveStatus("Không mở được video trực tiếp. Hãy thử lại.");
     renderState();
   }
