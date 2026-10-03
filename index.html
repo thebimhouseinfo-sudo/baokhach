@@ -14,10 +14,7 @@
   <main class="app-shell">
     <header class="app-header">
       <h1>Báo khách</h1>
-      <div id="connection-pill" class="connection-pill" data-connected="false" aria-live="polite">
-        <span id="connection-icon" aria-hidden="true">✕</span>
-        <span id="connection-text">Chưa kết nối</span>
-      </div>
+      <button id="settings-button" class="icon-button" type="button" aria-label="Cài đặt" title="Cài đặt">⚙</button>
     </header>
 
     <section id="access-panel" class="access-panel">
@@ -48,6 +45,34 @@
       </div>
     </section>
   </main>
+
+  <dialog id="settings-dialog" class="settings-dialog">
+    <div class="settings-sheet">
+      <div class="settings-header">
+        <h2>Cài đặt</h2>
+        <button id="settings-close" class="icon-button small" type="button" aria-label="Đóng">✕</button>
+      </div>
+
+      <section class="setting-row">
+        <span>Trạng thái</span>
+        <div id="connection-state" class="connection-state" data-connected="false" aria-live="polite">
+          <span id="connection-icon" aria-hidden="true">✕</span>
+          <strong id="connection-text">Chưa kết nối</strong>
+        </div>
+      </section>
+
+      <section class="setting-block">
+        <div class="setting-copy">
+          <span>Âm báo khách</span>
+          <small>Luôn bật</small>
+        </div>
+        <div class="segmented" role="group" aria-label="Âm lượng báo khách">
+          <button class="volume-option" type="button" data-volume-level="loud">Vừa lớn</button>
+          <button class="volume-option" type="button" data-volume-level="max">Rất lớn</button>
+        </div>
+      </section>
+    </div>
+  </dialog>
 
   <script type="module" src="/app.js"></script>
 </body>
