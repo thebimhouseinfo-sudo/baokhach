@@ -1,6 +1,6 @@
 # baokhach
 
-Web/PWA báo khách dùng **Human Detection do camera Imou tự xác định**. Ứng dụng không đọc RTSP, không xử lý ảnh và không chạy AI nhận diện người.
+Web/PWA báo khách dùng **Human Detection do camera Imou tự xác định** và có **live view theo yêu cầu** để người dùng tự nhìn kiểm tra. Ứng dụng không chạy AI nhận diện người thứ hai, không ghi hình và không có lịch sử phát lại.
 
 ## Production flow
 
@@ -15,6 +15,33 @@ PWA đang mở
   -> cooldown 300 giây
   -> phát "Có khách"
 ```
+
+## Live camera
+
+Live view là tùy chọn và **tắt mặc định**:
+
+```text
+[Xem trực tiếp]
+  -> GET /api/live-session
+  -> server xác thực BAOKHACH_APP_KEY
+  -> Imou getLiveStreamInfo
+       -> nếu chưa có live address: bindDeviceLive(streamId=1)
+       -> query lại
+  -> chọn HTTPS HLS SD
+  -> browser phát trực tiếp từ Imou
+```
+
+Video không đi qua Vercel. App ưu tiên `streamId=1` (SD), muted và `playsinline`.
+
+- Bấm **Tắt video**: player bị hủy và xóa source.
+- App chuyển sang nền: live playback bị dừng ngay.
+- Sau 45 giây không thao tác khi đang xem: UI/video được làm tối bằng CSS; chạm/phím sẽ sáng lại.
+- Đây chỉ là dim UI, không điều khiển độ sáng vật lý của màn hình.
+- Không có playback quá khứ, timeline, recording, snapshot, PTZ hay talkback.
+
+Live HLS URL được coi như dữ liệu nhạy cảm: chỉ trả cho client đã xác thực, chỉ giữ trong memory khi đang xem, không log, không lưu localStorage/IndexedDB và service worker không cache media HLS.
+
+Trên Safari/iOS app dùng native HLS. Trình duyệt không có native HLS sẽ lazy-load `hls.js@1.7.3` khi người dùng mở live view.
 
 ## Vercel environment
 
@@ -31,7 +58,7 @@ Các biến callback cũ chỉ phục vụ chẩn đoán và không nằm trên 
 
 ## Access control
 
-`/api/human-events` yêu cầu:
+Cả `/api/human-events` và `/api/live-session` đều yêu cầu:
 
 ```http
 Authorization: Bearer <BAOKHACH_APP_KEY>
@@ -50,11 +77,13 @@ Key không nằm trong URL hoặc source. Mỗi browser nhập key một lần v
 
 Polling chạy khi trang/PWA đang ở trạng thái `visible`. Khi app vào nền hoặc điện thoại khóa, timer browser không được coi là đáng tin cậy. Khi quay lại foreground, app kiểm tra ngay.
 
-Reliable background/locked-screen alerting không thuộc phiên bản này.
+Live video còn chặt hơn: khi document không còn `visible`, player bị dừng và hủy.
+
+Reliable background/locked-screen alerting/video không thuộc phiên bản này.
 
 ## API quota
 
-Production polling gọi **một `getAlarmMessage` cho mỗi chu kỳ**, không gọi `shareDeviceList` mỗi lần.
+Production alert polling gọi **một `getAlarmMessage` cho mỗi chu kỳ**, không gọi `shareDeviceList` mỗi lần.
 
 15 giây/lần tương đương tối đa:
 
@@ -64,7 +93,7 @@ Production polling gọi **một `getAlarmMessage` cho mỗi chu kỳ**, không 
 5,760 call/ngày / một client mở liên tục
 ```
 
-Ngoài ra có access-token refresh không thường xuyên. Nếu cần nhiều client mở liên tục hoặc background alert, kiến trúc cần chuyển sang một collector dùng chung thay vì mỗi client tự polling.
+Live view chỉ gọi API tạo/lấy live session khi người dùng chủ động mở camera; video bytes sau đó đi trực tiếp giữa browser và Imou.
 
 ## Test
 
@@ -84,3 +113,8 @@ Test bao phủ:
 - Cooldown 299 giây / 300 giây.
 - State restore sau reload.
 - Visible/hidden polling policy.
+- Live-session authorization.
+- HTTPS SD HLS stream selection.
+- Existing-live reuse và bind-then-requery.
+- HTTP-only rejection.
+- 45-second dim policy và hidden-page stop policy.
