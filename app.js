@@ -304,10 +304,16 @@ async function attachHls(hlsUrl, generation) {
 
   await new Promise((resolve, reject) => {
     let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("hls_timeout"));
+    }, 12000);
 
     const fail = () => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
       reject(new Error("hls_load_failed"));
     };
 
@@ -315,10 +321,12 @@ async function attachHls(hlsUrl, generation) {
       if (settled) return;
       if (generation !== liveGeneration) {
         settled = true;
+        clearTimeout(timeout);
         resolve();
         return;
       }
       settled = true;
+      clearTimeout(timeout);
       resolve();
     });
 
