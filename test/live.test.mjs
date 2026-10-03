@@ -265,3 +265,55 @@ test("live playback must stop whenever document is not visible", () => {
   assert.equal(shouldStopLiveForVisibility("hidden"), true);
   assert.equal(shouldStopLiveForVisibility("prerender"), true);
 });
+
+
+test("empty live stream list binds SD stream then re-queries", async () => {
+  let infoCalls = 0;
+  let bindCalls = 0;
+
+  const fetchImpl = async (url) => {
+    if (url.endsWith("/openapi/accessToken")) {
+      return jsonResponse({
+        code: "0",
+        data: { accessToken: "live-token-d", expireTime: 3600 }
+      });
+    }
+
+    if (url.endsWith("/openapi/getLiveStreamInfo")) {
+      infoCalls += 1;
+      return jsonResponse({
+        code: "0",
+        data: infoCalls === 1
+          ? { streams: [] }
+          : {
+              streams: [
+                {
+                  streamId: 1,
+                  hls: "https://media.example/empty-created-sd.m3u8",
+                  status: "0"
+                }
+              ]
+            }
+      });
+    }
+
+    if (url.endsWith("/openapi/bindDeviceLive")) {
+      bindCalls += 1;
+      return jsonResponse({ code: "0", data: {} });
+    }
+
+    throw new Error("Unexpected URL " + url);
+  };
+
+  const result = await ensureLiveStream({
+    appId: "live-empty-app",
+    appSecret: "secret",
+    deviceId: "fixed-device",
+    channelId: "0",
+    fetchImpl
+  });
+
+  assert.equal(bindCalls, 1);
+  assert.equal(infoCalls, 2);
+  assert.equal(result.hls, "https://media.example/empty-created-sd.m3u8");
+});
