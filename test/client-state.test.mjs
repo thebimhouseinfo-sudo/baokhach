@@ -128,3 +128,48 @@ test("polling policy is 15 seconds and only active in visible pages", () => {
   assert.equal(shouldPollImmediatelyOnVisibilityChange("hidden", "visible"), true);
   assert.equal(shouldPollImmediatelyOnVisibilityChange("visible", "visible"), false);
 });
+
+
+test("eligible alert retries the same event when audio playback fails", () => {
+  const previous = {
+    lastSeenEventRef: "old",
+    lastSeenAtMs: 1000,
+    lastDetectionAtMs: 1000,
+    lastAlertAtMs: 0
+  };
+  const result = ingestHumanEvents(
+    previous,
+    [
+      { eventRef: "old", occurredAtMs: 1000 },
+      { eventRef: "new", occurredAtMs: 2000 }
+    ],
+    3000
+  );
+
+  assert.equal(result.shouldAnnounce, true);
+  assert.deepEqual(
+    finalizeAlertAttempt(previous, result, false, 3000),
+    normalizeClientState(previous)
+  );
+});
+
+test("eligible alert advances seen state and cooldown only after playback succeeds", () => {
+  const previous = {
+    lastSeenEventRef: "old",
+    lastSeenAtMs: 1000,
+    lastDetectionAtMs: 1000,
+    lastAlertAtMs: 0
+  };
+  const result = ingestHumanEvents(
+    previous,
+    [
+      { eventRef: "old", occurredAtMs: 1000 },
+      { eventRef: "new", occurredAtMs: 2000 }
+    ],
+    3000
+  );
+
+  const next = finalizeAlertAttempt(previous, result, true, 3000);
+  assert.equal(next.lastSeenEventRef, "new");
+  assert.equal(next.lastAlertAtMs, 3000);
+});
