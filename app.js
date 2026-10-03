@@ -1,5 +1,4 @@
 import {
-  cooldownRemainingMs,
   ingestHumanEvents,
   markAlertPlayed,
   normalizeClientState
@@ -10,9 +9,9 @@ import {
   shouldPollImmediatelyOnVisibilityChange
 } from "./src/polling.mjs";
 import {
-  LIVE_DIM_IDLE_MS,
   shouldStopLiveForVisibility,
-  liveToggleLabel
+  liveToggleLabel,
+  streamAudioLabel
 } from "./src/live-ui.mjs";
 
 const KEY_STORAGE = "baokhach.appKey.v1";
@@ -21,39 +20,33 @@ const HLS_JS_URL = "https://cdn.jsdelivr.net/npm/hls.js@1.7.3/+esm";
 
 const els = {
   accessPanel: document.querySelector("#access-panel"),
-  appPanel: document.querySelector("#app-panel"),
+  viewer: document.querySelector("#viewer"),
   keyForm: document.querySelector("#key-form"),
   keyInput: document.querySelector("#app-key"),
-  forgetKey: document.querySelector("#forget-key"),
-  enableAudio: document.querySelector("#enable-audio"),
-  statusDot: document.querySelector("#status-dot"),
-  statusText: document.querySelector("#status-text"),
-  audioState: document.querySelector("#audio-state"),
-  lastDetection: document.querySelector("#last-detection"),
-  lastAlert: document.querySelector("#last-alert"),
-  cooldown: document.querySelector("#cooldown"),
   accessError: document.querySelector("#access-error"),
-  activity: document.querySelector("#activity"),
-  liveToggle: document.querySelector("#live-toggle"),
-  liveStatus: document.querySelector("#live-status"),
-  liveFrame: document.querySelector("#live-frame"),
-  liveVideo: document.querySelector("#live-video")
+  connectionPill: document.querySelector("#connection-pill"),
+  connectionIcon: document.querySelector("#connection-icon"),
+  connectionText: document.querySelector("#connection-text"),
+  videoStage: document.querySelector("#video-stage"),
+  liveVideo: document.querySelector("#live-video"),
+  videoMessage: document.querySelector("#video-message"),
+  videoToggle: document.querySelector("#video-toggle"),
+  streamAudioToggle: document.querySelector("#stream-audio-toggle")
 };
 
 let appKey = localStorage.getItem(KEY_STORAGE) || "";
 let clientState = readState();
-let audioEnabled = false;
+let connected = false;
 let pollTimer = null;
-let lastVisibility = document.visibilityState;
 let pollInFlight = false;
+let lastVisibility = document.visibilityState;
 
 let liveActive = false;
 let liveLoading = false;
-let liveDimmed = false;
-let liveDimTimer = null;
-let hlsInstance = null;
+let liveMuted = true;
 let liveGeneration = 0;
 let liveAbortController = null;
+let hlsInstance = null;
 
 function readState() {
   try {
@@ -69,53 +62,34 @@ function saveState() {
   localStorage.setItem(STATE_STORAGE, JSON.stringify(clientState));
 }
 
-function setStatus(kind, text) {
-  els.statusDot.dataset.state = kind;
-  els.statusText.textContent = text;
+function setConnected(value) {
+  connected = Boolean(value);
+  els.connectionPill.dataset.connected = connected ? "true" : "false";
+  els.connectionIcon.textContent = connected ? "✓" : "✕";
+  els.connectionText.textContent = connected ? "Đã kết nối" : "Chưa kết nối";
 }
 
-function setLiveStatus(text) {
-  els.liveStatus.textContent = text;
+function setVideoMessage(text = "", visible = true) {
+  els.videoMessage.textContent = text;
+  els.videoMessage.hidden = !visible;
 }
 
-function formatTimestamp(value) {
-  if (!value) return "Chưa có";
-  const date = new Date(Number(value));
-  if (Number.isNaN(date.getTime())) return "Chưa có";
-  return new Intl.DateTimeFormat("vi-VN", {
-    dateStyle: "short",
-    timeStyle: "medium"
-  }).format(date);
-}
-
-function formatCooldown(ms) {
-  if (ms <= 0) return "Sẵn sàng";
-  const totalSeconds = Math.ceil(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return minutes + ":" + String(seconds).padStart(2, "0");
-}
-
-function renderState() {
+function render() {
   els.accessPanel.hidden = Boolean(appKey);
-  els.appPanel.hidden = !appKey;
-  els.audioState.textContent = audioEnabled ? "Đã bật" : "Chưa bật";
-  els.lastDetection.textContent = formatTimestamp(clientState.lastDetectionAtMs);
-  els.lastAlert.textContent = formatTimestamp(clientState.lastAlertAtMs);
-  els.cooldown.textContent = formatCooldown(cooldownRemainingMs(clientState));
+  els.viewer.hidden = !appKey;
 
-  els.liveToggle.disabled = false;
-  els.liveToggle.textContent = liveToggleLabel({
+  els.videoToggle.textContent = liveToggleLabel({
     active: liveActive,
     loading: liveLoading
   });
-  els.liveToggle.dataset.active = liveActive ? "true" : "false";
-  els.liveFrame.hidden = !liveActive;
-  els.liveFrame.classList.toggle("is-dimmed", liveDimmed);
+  els.videoToggle.dataset.active = liveActive || liveLoading ? "true" : "false";
+
+  els.streamAudioToggle.textContent = streamAudioLabel(liveMuted);
+  els.streamAudioToggle.disabled = !liveActive;
 }
 
 function speakVisitor() {
-  if (!audioEnabled || !("speechSynthesis" in window)) return false;
+  if (!("speechSynthesis" in window)) return false;
 
   try {
     window.speechSynthesis.cancel();
@@ -130,29 +104,26 @@ function speakVisitor() {
   }
 }
 
-function clearAppKey(message = "Mã truy cập không đúng. Hãy nhập lại.") {
+function clearAppKey() {
   appKey = "";
   localStorage.removeItem(KEY_STORAGE);
   stopPolling();
-  stopLive({ reason: "auth", statusText: "Đã tắt video" });
-  els.accessError.textContent = message;
-  setStatus("error", "Cần đăng nhập lại");
-  renderState();
+  stopLive({ message: "Video đang tắt" });
+  setConnected(false);
+  els.accessError.textContent = "Mã truy cập không đúng. Hãy nhập lại.";
+  render();
 }
 
 async function pollOnce() {
   if (!appKey || pollInFlight || !shouldPoll(document.visibilityState)) return;
 
   pollInFlight = true;
-  setStatus("checking", "Đang kiểm tra camera…");
 
   try {
     const response = await fetch("/api/human-events", {
       method: "GET",
       cache: "no-store",
-      headers: {
-        Authorization: "Bearer " + appKey
-      }
+      headers: { Authorization: "Bearer " + appKey }
     });
 
     if (response.status === 401) {
@@ -165,32 +136,18 @@ async function pollOnce() {
       throw new Error(payload.error || "poll_failed");
     }
 
+    setConnected(true);
+
     const result = ingestHumanEvents(clientState, payload.events, Date.now());
     clientState = result.state;
     saveState();
 
-    if (result.shouldAnnounce) {
-      if (speakVisitor()) {
-        clientState = markAlertPlayed(clientState, Date.now());
-        saveState();
-        els.activity.textContent = "Đã phát thông báo: Có khách";
-      } else {
-        els.activity.textContent =
-          "Phát hiện có người nhưng âm thanh chưa được bật trên thiết bị này.";
-      }
-    } else if (result.unseenCount > 0) {
-      els.activity.textContent =
-        cooldownRemainingMs(clientState) > 0
-          ? "Có phát hiện mới, đang trong thời gian chờ 5 phút."
-          : "Đã ghi nhận phát hiện mới.";
-    } else if (result.baselineCreated) {
-      els.activity.textContent = "Đã đồng bộ trạng thái hiện tại.";
+    if (result.shouldAnnounce && speakVisitor()) {
+      clientState = markAlertPlayed(clientState, Date.now());
+      saveState();
     }
-
-    setStatus("online", "Đang theo dõi · 15 giây/lần");
-    renderState();
   } catch {
-    setStatus("error", "Lỗi kết nối · sẽ thử lại");
+    setConnected(false);
   } finally {
     pollInFlight = false;
   }
@@ -205,42 +162,13 @@ function stopPolling() {
 
 function startPolling({ immediate = true } = {}) {
   stopPolling();
-
-  if (!appKey) return;
-  if (!shouldPoll(document.visibilityState)) {
-    setStatus("paused", "Đã tạm dừng khi app ở nền");
-    return;
-  }
+  if (!appKey || !shouldPoll(document.visibilityState)) return;
 
   if (immediate) pollOnce();
   pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
 }
 
-function clearDimTimer() {
-  if (liveDimTimer) {
-    clearTimeout(liveDimTimer);
-    liveDimTimer = null;
-  }
-}
-
-function setLiveDimmed(value) {
-  liveDimmed = Boolean(value) && liveActive;
-  renderState();
-}
-
-function wakeLiveView() {
-  if (!liveActive) return;
-
-  setLiveDimmed(false);
-  clearDimTimer();
-  liveDimTimer = setTimeout(() => {
-    if (liveActive) setLiveDimmed(true);
-  }, LIVE_DIM_IDLE_MS);
-}
-
 function destroyPlayer() {
-  clearDimTimer();
-
   if (liveAbortController) {
     liveAbortController.abort();
     liveAbortController = null;
@@ -261,19 +189,15 @@ function destroyPlayer() {
 
   liveActive = false;
   liveLoading = false;
-  liveDimmed = false;
+  liveMuted = true;
+  els.liveVideo.muted = true;
 }
 
-function stopLive({
-  reason = "user",
-  statusText = reason === "hidden"
-    ? "Video đã tắt khi app chuyển sang nền."
-    : "Video đang tắt."
-} = {}) {
+function stopLive({ message = "Video đang tắt" } = {}) {
   liveGeneration += 1;
   destroyPlayer();
-  setLiveStatus(statusText);
-  renderState();
+  setVideoMessage(message, true);
+  render();
 }
 
 async function attachHls(hlsUrl, generation) {
@@ -289,10 +213,7 @@ async function attachHls(hlsUrl, generation) {
   if (generation !== liveGeneration) return;
 
   const Hls = module.default || module.Hls;
-
-  if (!Hls?.isSupported?.()) {
-    throw new Error("hls_not_supported");
-  }
+  if (!Hls?.isSupported?.()) throw new Error("hls_not_supported");
 
   const instance = new Hls({
     enableWorker: true,
@@ -319,12 +240,6 @@ async function attachHls(hlsUrl, generation) {
 
     instance.on(Hls.Events.MANIFEST_PARSED, () => {
       if (settled) return;
-      if (generation !== liveGeneration) {
-        settled = true;
-        clearTimeout(timeout);
-        resolve();
-        return;
-      }
       settled = true;
       clearTimeout(timeout);
       resolve();
@@ -349,17 +264,15 @@ async function startLive() {
   const generation = ++liveGeneration;
   liveAbortController = new AbortController();
   liveLoading = true;
-  setLiveStatus("Đang xin luồng trực tiếp từ camera…");
-  renderState();
+  setVideoMessage("Đang kết nối camera…", true);
+  render();
 
   try {
     const response = await fetch("/api/live-session", {
       method: "GET",
       cache: "no-store",
       signal: liveAbortController.signal,
-      headers: {
-        Authorization: "Bearer " + appKey
-      }
+      headers: { Authorization: "Bearer " + appKey }
     });
 
     if (response.status === 401) {
@@ -371,6 +284,9 @@ async function startLive() {
     if (generation !== liveGeneration) return;
 
     if (!response.ok || !payload.ok || !payload.hls) {
+      if (response.status === 503) {
+        throw new Error("camera_not_configured");
+      }
       throw new Error(payload.error || "live_session_failed");
     }
 
@@ -378,8 +294,10 @@ async function startLive() {
     destroyPlayer();
     liveGeneration = generation;
     liveLoading = true;
+    liveMuted = true;
     els.liveVideo.muted = true;
     els.liveVideo.playsInline = true;
+
     await attachHls(payload.hls, generation);
     if (generation !== liveGeneration) {
       destroyPlayer();
@@ -388,17 +306,42 @@ async function startLive() {
 
     liveActive = true;
     liveLoading = false;
-    setLiveStatus("Đang xem trực tiếp · SD · tắt tiếng");
-    wakeLiveView();
-    renderState();
+    setVideoMessage("", false);
+    render();
   } catch (error) {
     if (generation !== liveGeneration || error?.name === "AbortError") return;
     liveAbortController = null;
     destroyPlayer();
     liveGeneration = generation;
-    setLiveStatus("Không mở được video trực tiếp. Hãy thử lại.");
-    renderState();
+    setVideoMessage(
+      error?.message === "camera_not_configured"
+        ? "Camera chưa được cấu hình đầy đủ"
+        : "Không mở được camera trực tiếp",
+      true
+    );
+    render();
   }
+}
+
+async function toggleStreamAudio() {
+  if (!liveActive) return;
+
+  const nextMuted = !liveMuted;
+  els.liveVideo.muted = nextMuted;
+
+  if (!nextMuted) {
+    try {
+      await els.liveVideo.play();
+    } catch {
+      els.liveVideo.muted = true;
+      liveMuted = true;
+      render();
+      return;
+    }
+  }
+
+  liveMuted = nextMuted;
+  render();
 }
 
 els.keyForm.addEventListener("submit", (event) => {
@@ -410,32 +353,12 @@ els.keyForm.addEventListener("submit", (event) => {
   localStorage.setItem(KEY_STORAGE, value);
   els.keyInput.value = "";
   els.accessError.textContent = "";
-  renderState();
+  setConnected(false);
+  render();
   startPolling({ immediate: true });
 });
 
-els.forgetKey.addEventListener("click", () => {
-  appKey = "";
-  localStorage.removeItem(KEY_STORAGE);
-  stopPolling();
-  stopLive({ statusText: "Video đang tắt." });
-  setStatus("paused", "Chưa có mã truy cập");
-  renderState();
-});
-
-els.enableAudio.addEventListener("click", () => {
-  if (!("speechSynthesis" in window)) {
-    els.audioState.textContent = "Trình duyệt không hỗ trợ";
-    return;
-  }
-
-  audioEnabled = true;
-  renderState();
-  speakVisitor();
-  els.activity.textContent = "Đã bật âm thanh thử.";
-});
-
-els.liveToggle.addEventListener("click", () => {
+els.videoToggle.addEventListener("click", () => {
   if (liveActive || liveLoading) {
     stopLive();
   } else {
@@ -443,11 +366,7 @@ els.liveToggle.addEventListener("click", () => {
   }
 });
 
-for (const eventName of ["pointerdown", "touchstart"]) {
-  els.liveFrame.addEventListener(eventName, wakeLiveView, { passive: true });
-}
-
-window.addEventListener("keydown", wakeLiveView);
+els.streamAudioToggle.addEventListener("click", toggleStreamAudio);
 
 document.addEventListener("visibilitychange", () => {
   const nextVisibility = document.visibilityState;
@@ -458,19 +377,17 @@ document.addEventListener("visibilitychange", () => {
   lastVisibility = nextVisibility;
 
   if (shouldStopLiveForVisibility(nextVisibility) && (liveActive || liveLoading)) {
-    stopLive({ reason: "hidden" });
+    stopLive({ message: "Video đã tắt khi app ở nền" });
   }
 
   if (!shouldPoll(nextVisibility)) {
     stopPolling();
-    setStatus("paused", "Đã tạm dừng khi app ở nền");
+    setConnected(false);
     return;
   }
 
   startPolling({ immediate });
 });
-
-setInterval(renderState, 1000);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -478,10 +395,10 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-renderState();
-setLiveStatus("Video đang tắt.");
+setConnected(false);
+setVideoMessage("Video đang tắt", true);
+render();
+
 if (appKey) {
   startPolling({ immediate: true });
-} else {
-  setStatus("paused", "Nhập mã truy cập để bắt đầu");
 }
