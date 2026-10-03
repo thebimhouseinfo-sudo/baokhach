@@ -15,3 +15,9 @@ export function shouldDimLive({
 export function shouldStopLiveForVisibility(visibilityState) {
   return visibilityState !== "visible";
 }
+
+
+export function liveToggleLabel({ active = false, loading = false } = {}) {
+  if (loading) return "Hủy mở video";
+  return active ? "Tắt video" : "Xem trực tiếp";
+}
