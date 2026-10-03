@@ -11,7 +11,8 @@ import {
 } from "./src/polling.mjs";
 import {
   LIVE_DIM_IDLE_MS,
-  shouldStopLiveForVisibility
+  shouldStopLiveForVisibility,
+  liveToggleLabel
 } from "./src/live-ui.mjs";
 
 const KEY_STORAGE = "baokhach.appKey.v1";
@@ -103,12 +104,11 @@ function renderState() {
   els.lastAlert.textContent = formatTimestamp(clientState.lastAlertAtMs);
   els.cooldown.textContent = formatCooldown(cooldownRemainingMs(clientState));
 
-  els.liveToggle.disabled = liveLoading;
-  els.liveToggle.textContent = liveLoading
-    ? "Đang mở…"
-    : liveActive
-      ? "Tắt video"
-      : "Xem trực tiếp";
+  els.liveToggle.disabled = false;
+  els.liveToggle.textContent = liveToggleLabel({
+    active: liveActive,
+    loading: liveLoading
+  });
   els.liveToggle.dataset.active = liveActive ? "true" : "false";
   els.liveFrame.hidden = !liveActive;
   els.liveFrame.classList.toggle("is-dimmed", liveDimmed);
