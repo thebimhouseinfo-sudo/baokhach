@@ -3,105 +3,49 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
-  <meta name="description" content="Báo khách bằng Human Detection của camera Imou">
+  <meta name="theme-color" content="#0b0d10">
+  <meta name="description" content="Báo khách và xem trực tiếp camera Imou">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
   <title>Báo khách</title>
 </head>
 <body>
-  <main class="shell">
-    <header class="hero">
-      <div>
-        <p class="eyebrow">IMOU HUMAN DETECTION</p>
-        <h1>Báo khách</h1>
-        <p class="subtitle">Nghe báo “Có khách” và mở camera trực tiếp khi cần kiểm tra bằng mắt.</p>
-      </div>
-      <div class="status-pill" aria-live="polite">
-        <span id="status-dot" class="status-dot" data-state="paused"></span>
-        <span id="status-text">Đang khởi động…</span>
+  <main class="app-shell">
+    <header class="app-header">
+      <h1>Báo khách</h1>
+      <div id="connection-pill" class="connection-pill" data-connected="false" aria-live="polite">
+        <span id="connection-icon" aria-hidden="true">✕</span>
+        <span id="connection-text">Chưa kết nối</span>
       </div>
     </header>
 
-    <section id="access-panel" class="card access-card">
-      <h2>Mã truy cập</h2>
-      <p>Nhập mã <strong>BAOKHACH_APP_KEY</strong> bạn đã đặt trên Vercel. Mã chỉ được lưu trên thiết bị này.</p>
+    <section id="access-panel" class="access-panel">
       <form id="key-form" class="key-form">
-        <label for="app-key">Mã truy cập</label>
-        <div class="input-row">
-          <input id="app-key" type="password" autocomplete="current-password" required>
-          <button type="submit">Bắt đầu</button>
-        </div>
+        <input id="app-key" type="password" autocomplete="current-password" placeholder="Mã truy cập" required>
+        <button type="submit">Kết nối</button>
       </form>
-      <p id="access-error" class="error-text" role="alert"></p>
+      <p id="access-error" class="access-error" role="alert"></p>
     </section>
 
-    <section id="app-panel" hidden>
-      <div class="grid">
-        <article class="card primary-card">
-          <div class="card-heading">
-            <div>
-              <p class="label">Thông báo âm thanh</p>
-              <h2 id="audio-state">Chưa bật</h2>
-            </div>
-            <button id="enable-audio" class="primary-action" type="button">Bật / thử âm thanh</button>
-          </div>
-          <p class="helper">Trình duyệt cần một lần bấm trực tiếp để cho phép phát giọng nói.</p>
-        </article>
-
-        <article class="card live-card">
-          <div class="card-heading live-heading">
-            <div>
-              <p class="label">Camera trực tiếp</p>
-              <h2>Xem hiện tại</h2>
-            </div>
-            <button id="live-toggle" class="live-toggle" type="button">Xem trực tiếp</button>
-          </div>
-
-          <p id="live-status" class="live-status" aria-live="polite">Video đang tắt.</p>
-
-          <div id="live-frame" class="live-frame" hidden tabindex="0" aria-label="Camera trực tiếp">
-            <video
-              id="live-video"
-              class="live-video"
-              muted
-              playsinline
-              preload="none"
-              disablepictureinpicture
-            ></video>
-            <div class="live-badge">LIVE · SD · TẮT TIẾNG</div>
-            <div class="live-dim-overlay" aria-hidden="true">
-              <span>Đã giảm sáng · chạm để xem rõ</span>
-            </div>
-          </div>
-
-          <p class="helper">Video chỉ mở khi bạn bấm xem, tự tắt khi app chuyển sang nền và giảm sáng sau 45 giây không thao tác.</p>
-        </article>
-
-        <article class="card metric-card">
-          <p class="label">Phát hiện gần nhất</p>
-          <strong id="last-detection">Chưa có</strong>
-        </article>
-
-        <article class="card metric-card">
-          <p class="label">Đã báo gần nhất</p>
-          <strong id="last-alert">Chưa có</strong>
-        </article>
-
-        <article class="card metric-card">
-          <p class="label">Thời gian chờ</p>
-          <strong id="cooldown">Sẵn sàng</strong>
-        </article>
+    <section id="viewer" class="viewer" hidden>
+      <div id="video-stage" class="video-stage">
+        <video
+          id="live-video"
+          class="live-video"
+          muted
+          playsinline
+          preload="none"
+          controls
+          controlslist="nodownload noplaybackrate"
+        ></video>
+        <div id="video-message" class="video-message">Video đang tắt</div>
       </div>
 
-      <section class="card activity-card">
-        <p class="label">Trạng thái</p>
-        <p id="activity">Đang chờ dữ liệu Human Detection mới.</p>
-        <p class="helper">Ứng dụng kiểm tra mỗi 15 giây khi trang đang mở. Khi app ở nền hoặc điện thoại bị khóa, việc kiểm tra không được đảm bảo.</p>
-      </section>
-
-      <button id="forget-key" class="text-button" type="button">Quên mã truy cập trên thiết bị này</button>
+      <div class="controls" aria-label="Điều khiển camera">
+        <button id="video-toggle" class="control-button primary" type="button">Bật video</button>
+        <button id="stream-audio-toggle" class="control-button" type="button" disabled>Bật tiếng</button>
+      </div>
     </section>
   </main>
 
