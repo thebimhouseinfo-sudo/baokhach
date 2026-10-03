@@ -587,7 +587,10 @@ export async function ensureLiveStream({
 
   try {
     const existing = await callImou("getLiveStreamInfo", params, config);
-    return selectSecureSdLiveStream(existing);
+    const streams = Array.isArray(existing?.streams) ? existing.streams : [];
+    if (streams.length) {
+      return selectSecureSdLiveStream(existing);
+    }
   } catch (error) {
     if (!canAttemptLiveBind(error)) throw error;
   }
