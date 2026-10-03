@@ -557,7 +557,8 @@ function canAttemptLiveBind(error) {
     "FETCH_UNAVAILABLE",
     "IMOU_NETWORK_ERROR",
     "IMOU_BAD_RESPONSE",
-    "TOKEN_MISSING"
+    "TOKEN_MISSING",
+    "LIVE_HTTPS_SD_UNAVAILABLE"
   ]).has(error.code);
 }
 
