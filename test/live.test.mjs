@@ -10,7 +10,8 @@ import { buildLiveSessionResponse } from "../src/live-api.mjs";
 import {
   LIVE_DIM_IDLE_MS,
   shouldDimLive,
-  shouldStopLiveForVisibility
+  shouldStopLiveForVisibility,
+  liveToggleLabel
 } from "../src/live-ui.mjs";
 
 function jsonResponse(result, ok = true, status = 200) {
@@ -316,4 +317,11 @@ test("empty live stream list binds SD stream then re-queries", async () => {
   assert.equal(bindCalls, 1);
   assert.equal(infoCalls, 2);
   assert.equal(result.hls, "https://media.example/empty-created-sd.m3u8");
+});
+
+
+test("live toggle remains an explicit cancel action while opening", () => {
+  assert.equal(liveToggleLabel({ active: false, loading: false }), "Xem trực tiếp");
+  assert.equal(liveToggleLabel({ active: false, loading: true }), "Hủy mở video");
+  assert.equal(liveToggleLabel({ active: true, loading: false }), "Tắt video");
 });
